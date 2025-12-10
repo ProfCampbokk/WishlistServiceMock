@@ -1,220 +1,236 @@
 const express = require("express");
 const app = express();
 
-// Use process.env.PORT for hosting platforms, fallback to 3000 locally
+// IMPORTANT: use env PORT if deployed, fallback for local
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
 /**
- * MOCK DATA
+ * Mock data representing:
+ * - WishlistDb: lastSeenAt, products in wishlist
+ * - ProductTrackerService: per-product change info
  *
- * - changeInStatus is now an ARRAY of strings, e.g. ["Sale", "LowStock"].
- *   Empty array = no active changes (i.e. "nil").
+ * changeInStatus is now an ARRAY of strings, e.g.:
+ *   ["Sale"]
+ *   ["Sale", "LowStock"]
+ *   []
  *
- * - changedAtDate:
- *   - Recent (Dec 2025) => "new" changes.
- *   - Several weeks/months ago (Oct/Sep 2025) => old changes only.
+ * For "unchanged" products, changeInStatus = [] (nil) and
+ * changedAtDate is several weeks/months ago.
  *
- * - hasUpdates is computed by:
- *   - Any product where:
- *       changeInStatus.length > 0
- *       AND changedAtDate > lastSeenAt
+ * Today is assumed to be: 2025-12-10
  */
 
 const WISHLISTS = {
-  // 111 – NO updates (all changes are old; lastSeenAt is after changes)
-  "111": {
-    wishlistId: "111",
+  // 101: No updates at all
+  "101": {
+    wishlistId: "101",
     lastSeenAt: "2025-12-09T12:30:00Z",
-    products: [
+    products: ["P10101", "P10102", "P10103"],
+    updates: []
+  },
+
+  // 102: Single product, single status = "Sale"
+  "102": {
+    wishlistId: "102",
+    lastSeenAt: "2025-12-09T09:00:00Z",
+    products: ["P10201", "P10202"],
+    updates: [
       {
-        productId: "P11101",
-        changeInStatus: [], // nil: no current flags
-        changedAtDate: "2025-10-15T09:00:00Z" // ~8 weeks ago
-      },
-      {
-        productId: "P11102",
-        changeInStatus: [],
-        changedAtDate: "2025-09-17T09:00:00Z" // ~12 weeks ago
+        productId: "P10201",
+        changeInStatus: ["Sale"],
+        changedAtDate: "2025-12-10T08:15:00Z"
       }
     ]
   },
 
-  // 222 – HAS updates: one product now on Sale
-  "222": {
-    wishlistId: "222",
-    lastSeenAt: "2025-12-09T09:00:00Z",
-    products: [
+  // 103: Single product, multiple statuses: "Sale" + "LowStock"
+  "103": {
+    wishlistId: "103",
+    lastSeenAt: "2025-12-08T10:00:00Z",
+    products: ["P10301", "P10302"],
+    updates: [
       {
-        productId: "P22201",
-        changeInStatus: ["Sale"], // now on sale
-        changedAtDate: "2025-12-10T08:00:00Z"
+        productId: "P10302",
+        changeInStatus: ["Sale", "LowStock"],
+        changedAtDate: "2025-12-09T18:45:00Z"
+      }
+    ]
+  },
+
+  // 104: Multiple products, different statuses
+  "104": {
+    wishlistId: "104",
+    lastSeenAt: "2025-12-07T16:00:00Z",
+    products: ["P10401", "P10402", "P10403"],
+    updates: [
+      {
+        productId: "P10401",
+        changeInStatus: ["NoStock"],
+        changedAtDate: "2025-12-09T11:00:00Z"
       },
       {
-        productId: "P22202",
-        changeInStatus: [], // unchanged since weeks ago
+        productId: "P10403",
+        changeInStatus: ["BackInStock"],
+        changedAtDate: "2025-12-10T07:20:00Z"
+      }
+    ]
+  },
+
+  // 105: Product changed many weeks ago (8 weeks ago)
+  //      still counts as an update vs lastSeenAt
+  "105": {
+    wishlistId: "105",
+    lastSeenAt: "2025-11-01T09:00:00Z",
+    products: ["P10501", "P10502"],
+    updates: [
+      {
+        productId: "P10502",
+        changeInStatus: ["HighStock"],
+        // ~8 weeks before 2025-12-10
         changedAtDate: "2025-10-15T10:00:00Z"
       }
     ]
   },
 
-  // 333 – HAS updates: one product now LowStock
-  "333": {
-    wishlistId: "333",
-    lastSeenAt: "2025-12-08T18:00:00Z",
-    products: [
+  // 106: Product went from sale back to normal: "NotOnSale"
+  "106": {
+    wishlistId: "106",
+    lastSeenAt: "2025-12-09T20:00:00Z",
+    products: ["P10601"],
+    updates: [
       {
-        productId: "P33301",
-        changeInStatus: ["LowStock"],
-        changedAtDate: "2025-12-09T23:30:00Z"
-      },
-      {
-        productId: "P33302",
-        changeInStatus: [],
-        changedAtDate: "2025-11-12T09:15:00Z" // ~4 weeks ago
+        productId: "P10601",
+        changeInStatus: ["NotOnSale"],
+        changedAtDate: "2025-12-10T06:30:00Z"
       }
     ]
   },
 
-  // 444 – HAS updates: combined Sale + LowStock
-  "444": {
-    wishlistId: "444",
-    lastSeenAt: "2025-12-07T10:00:00Z",
-    products: [
+  // 107: Multiple products, mixed multi-status permutations
+  "107": {
+    wishlistId: "107",
+    lastSeenAt: "2025-12-05T13:00:00Z",
+    products: ["P10701", "P10702", "P10703"],
+    updates: [
       {
-        productId: "P44401",
-        changeInStatus: ["Sale", "LowStock"],
-        changedAtDate: "2025-12-09T08:45:00Z"
-      },
-      {
-        productId: "P44402",
-        changeInStatus: [],
-        changedAtDate: "2025-09-20T11:00:00Z"
-      }
-    ]
-  },
-
-  // 555 – HAS updates: one NoStock, others unchanged (old)
-  "555": {
-    wishlistId: "555",
-    lastSeenAt: "2025-12-05T14:00:00Z",
-    products: [
-      {
-        productId: "P55501",
-        changeInStatus: ["NoStock"],
-        changedAtDate: "2025-12-09T16:00:00Z"
-      },
-      {
-        productId: "P55502",
-        changeInStatus: [],
-        changedAtDate: "2025-10-01T10:00:00Z"
-      },
-      {
-        productId: "P55503",
-        changeInStatus: [],
-        changedAtDate: "2025-09-10T10:00:00Z"
-      }
-    ]
-  },
-
-  // 666 – NO updates: has statuses, but all before lastSeenAt
-  "666": {
-    wishlistId: "666",
-    lastSeenAt: "2025-12-10T09:00:00Z",
-    products: [
-      {
-        productId: "P66601",
-        changeInStatus: ["Sale"], // used to be on sale
-        changedAtDate: "2025-12-05T12:00:00Z" // BEFORE lastSeenAt
-      },
-      {
-        productId: "P66602",
-        changeInStatus: ["LowStock"],
-        changedAtDate: "2025-12-01T09:30:00Z"
-      }
-    ]
-  },
-
-  // 777 – HAS updates: BackInStock
-  "777": {
-    wishlistId: "777",
-    lastSeenAt: "2025-12-01T08:00:00Z",
-    products: [
-      {
-        productId: "P77701",
-        changeInStatus: ["BackInStock"],
-        changedAtDate: "2025-12-08T10:30:00Z"
-      },
-      {
-        productId: "P77702",
-        changeInStatus: [], // unchanged, old
-        changedAtDate: "2025-09-25T07:45:00Z"
-      }
-    ]
-  },
-
-  // 888 – HAS updates: multiple combined statuses
-  "888": {
-    wishlistId: "888",
-    lastSeenAt: "2025-12-09T06:00:00Z",
-    products: [
-      {
-        productId: "P88801",
-        changeInStatus: ["Sale", "BackInStock"],
-        changedAtDate: "2025-12-10T07:00:00Z"
-      },
-      {
-        productId: "P88802",
-        changeInStatus: ["HighStock"],
-        changedAtDate: "2025-12-09T20:15:00Z"
-      },
-      {
-        productId: "P88803",
-        changeInStatus: [],
-        changedAtDate: "2025-10-10T09:00:00Z"
-      }
-    ]
-  },
-
-  // 999 – NO updates, empty wishlist
-  "999": {
-    wishlistId: "999",
-    lastSeenAt: "2025-12-09T12:00:00Z",
-    products: [] // nothing in wishlist
-  },
-
-  // 1000 – MIXED: one updated, one old, one nil
-  "1000": {
-    wishlistId: "1000",
-    lastSeenAt: "2025-12-08T12:00:00Z",
-    products: [
-      {
-        productId: "P100001",
+        productId: "P10701",
         changeInStatus: ["Sale"],
-        changedAtDate: "2025-12-09T13:00:00Z" // NEW
+        changedAtDate: "2025-12-09T09:30:00Z"
       },
       {
-        productId: "P100002",
-        changeInStatus: ["LowStock"],
-        changedAtDate: "2025-11-01T09:00:00Z" // old
+        productId: "P10702",
+        changeInStatus: ["LowStock", "Sale"],
+        changedAtDate: "2025-12-09T09:45:00Z"
       },
       {
-        productId: "P100003",
-        changeInStatus: [], // nil
-        changedAtDate: "2025-10-05T09:00:00Z"
+        productId: "P10703",
+        changeInStatus: ["NoStock", "HighStock"],
+        changedAtDate: "2025-12-08T14:20:00Z"
+      }
+    ]
+  },
+
+  // 108: Contains a product that hasn't changed recently:
+  //      changeInStatus is empty, changedAtDate months ago
+  "108": {
+    wishlistId: "108",
+    lastSeenAt: "2025-12-09T10:00:00Z",
+    products: ["P10801", "P10802"],
+    updates: [
+      {
+        // changed recently, a genuine update
+        productId: "P10801",
+        changeInStatus: ["Sale"],
+        changedAtDate: "2025-12-10T09:00:00Z"
+      },
+      {
+        // unchanged: no effective status change and old timestamp
+        productId: "P10802",
+        changeInStatus: [],
+        // ~12 weeks before 2025-12-10
+        changedAtDate: "2025-09-17T10:00:00Z"
+      }
+    ]
+  },
+
+  // 109: All products unchanged (nil changes),
+  //      last "change" many weeks ago
+  "109": {
+    wishlistId: "109",
+    lastSeenAt: "2025-12-10T08:00:00Z",
+    products: ["P10901", "P10902"],
+    updates: [
+      {
+        productId: "P10901",
+        changeInStatus: [],
+        // ~4 weeks before 2025-12-10
+        changedAtDate: "2025-11-12T12:00:00Z"
+      },
+      {
+        productId: "P10902",
+        changeInStatus: [],
+        // ~6 weeks before 2025-12-10
+        changedAtDate: "2025-10-29T09:30:00Z"
+      }
+    ]
+  },
+
+  // 110: Edge case: one product with multiple statuses,
+  //      another unchanged from long ago
+  "110": {
+    wishlistId: "110",
+    lastSeenAt: "2025-12-06T18:00:00Z",
+    products: ["P11001", "P11002"],
+    updates: [
+      {
+        productId: "P11001",
+        changeInStatus: ["BackInStock", "Sale"],
+        changedAtDate: "2025-12-09T21:10:00Z"
+      },
+      {
+        productId: "P11002",
+        changeInStatus: [],
+        // ~10 weeks before 2025-12-10
+        changedAtDate: "2025-10-01T11:11:00Z"
       }
     ]
   }
 };
 
 /**
+ * Helper: get only the products that actually have real changes
+ * (i.e. changeInStatus array is non-empty).
+ */
+function getChangedProducts(updates) {
+  if (!Array.isArray(updates)) return [];
+  return updates.filter(
+    (u) =>
+      Array.isArray(u.changeInStatus) && u.changeInStatus.length > 0
+  );
+}
+
+/**
  * GET /wishlist/:wishlistId/updates
  *
- * - hasUpdates = true if ANY product has:
- *      changeInStatus.length > 0
- *      AND changedAtDate > lastSeenAt
- * - updatedProducts = just those products.
+ * Returns whether the wishlist has updates and, if so,
+ * the per-product change attributes.
+ *
+ * Example response:
+ * {
+ *   "wishlistId": "102",
+ *   "lastSeenAt": "2025-12-09T09:00:00Z",
+ *   "hasUpdates": true,
+ *   "updatedProducts": [
+ *     {
+ *       "productId": "P10201",
+ *       "changeInStatus": ["Sale"],
+ *       "changedAtDate": "2025-12-10T08:15:00Z"
+ *     }
+ *   ],
+ *   "allProducts": ["P10201", "P10202"]
+ * }
  */
 app.get("/wishlist/:wishlistId/updates", (req, res) => {
   const { wishlistId } = req.params;
@@ -227,33 +243,21 @@ app.get("/wishlist/:wishlistId/updates", (req, res) => {
     });
   }
 
-  const lastSeen = new Date(wishlist.lastSeenAt || 0);
-
-  const updatedProducts = (wishlist.products || []).filter((p) => {
-    if (!Array.isArray(p.changeInStatus) || p.changeInStatus.length === 0) {
-      // "nil" changes
-      return false;
-    }
-    if (!p.changedAtDate) return false;
-
-    const changedAt = new Date(p.changedAtDate);
-    return changedAt > lastSeen;
-  });
-
-  const hasUpdates = updatedProducts.length > 0;
+  const changedProducts = getChangedProducts(wishlist.updates);
+  const hasUpdates = changedProducts.length > 0;
 
   res.json({
     wishlistId: wishlist.wishlistId,
     lastSeenAt: wishlist.lastSeenAt,
-    products: wishlist.products,
     hasUpdates,
-    updatedProducts
+    updatedProducts: changedProducts,
+    allProducts: wishlist.products
   });
 });
 
 /**
  * POST /wishlist/:wishlistId/view
- * - simulate "customer views wishlist", updating lastSeenAt to now.
+ * Simulate viewing the wishlist and updating the lastSeenAt date.
  */
 app.post("/wishlist/:wishlistId/view", (req, res) => {
   const { wishlistId } = req.params;
@@ -277,5 +281,5 @@ app.post("/wishlist/:wishlistId/view", (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Mock WishlistService running on port ${PORT}`);
+  console.log(`Mock WishlistService running on http://localhost:${PORT}`);
 });
