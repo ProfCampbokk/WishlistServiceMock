@@ -1,159 +1,208 @@
 const express = require("express");
 const app = express();
-const PORT = 3000;
+
+// Use process.env.PORT for hosting platforms, fallback to 3000 locally
+const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
 /**
- * Mock data – pretending to be our WishlistDb + ProductTrackerService combo.
+ * MOCK DATA
  *
- * changeInStatus is now an ARRAY of statuses to allow multiple changes, e.g.:
- *   ["Sale", "LowStock"]
+ * - changeInStatus is now an ARRAY of strings, e.g. ["Sale", "LowStock"].
+ *   Empty array = no active changes (i.e. "nil").
  *
- * Valid example statuses:
- *   "Sale", "NotOnSale", "NoStock", "LowStock", "BackInStock", "HighStock"
+ * - changedAtDate:
+ *   - Recent (Dec 2025) => "new" changes.
+ *   - Several weeks/months ago (Oct/Sep 2025) => old changes only.
+ *
+ * - hasUpdates is computed by:
+ *   - Any product where:
+ *       changeInStatus.length > 0
+ *       AND changedAtDate > lastSeenAt
  */
 
 const WISHLISTS = {
-  // 1. No updates (hasUpdates = false)
+  // 111 – NO updates (all changes are old; lastSeenAt is after changes)
   "111": {
     wishlistId: "111",
     lastSeenAt: "2025-12-09T12:30:00Z",
-    products: ["P10001", "P10002"],
-    updates: []
+    products: [
+      {
+        productId: "P11101",
+        changeInStatus: [], // nil: no current flags
+        changedAtDate: "2025-10-15T09:00:00Z" // ~8 weeks ago
+      },
+      {
+        productId: "P11102",
+        changeInStatus: [],
+        changedAtDate: "2025-09-17T09:00:00Z" // ~12 weeks ago
+      }
+    ]
   },
 
-  // 2. Single product, single status change
+  // 222 – HAS updates: one product now on Sale
   "222": {
     wishlistId: "222",
-    lastSeenAt: "2025-12-08T09:00:00Z",
-    products: ["P20001", "P20002", "P20003"],
-    updates: [
+    lastSeenAt: "2025-12-09T09:00:00Z",
+    products: [
       {
-        productId: "P20001",
-        changeInStatus: ["Sale"],
-        changedAtDate: "2025-12-09T10:15:00Z"
+        productId: "P22201",
+        changeInStatus: ["Sale"], // now on sale
+        changedAtDate: "2025-12-10T08:00:00Z"
+      },
+      {
+        productId: "P22202",
+        changeInStatus: [], // unchanged since weeks ago
+        changedAtDate: "2025-10-15T10:00:00Z"
       }
     ]
   },
 
-  // 3. Multiple products, mixed single + multiple statuses
+  // 333 – HAS updates: one product now LowStock
   "333": {
     wishlistId: "333",
-    lastSeenAt: "2025-12-07T08:00:00Z",
-    products: ["P30001", "P30002", "P30003", "P30004"],
-    updates: [
+    lastSeenAt: "2025-12-08T18:00:00Z",
+    products: [
       {
-        productId: "P30001",
+        productId: "P33301",
         changeInStatus: ["LowStock"],
-        changedAtDate: "2025-12-09T09:30:00Z"
+        changedAtDate: "2025-12-09T23:30:00Z"
       },
       {
-        productId: "P30003",
-        changeInStatus: ["Sale", "LowStock"],
-        changedAtDate: "2025-12-09T11:00:00Z"
+        productId: "P33302",
+        changeInStatus: [],
+        changedAtDate: "2025-11-12T09:15:00Z" // ~4 weeks ago
       }
     ]
   },
 
-  // 4. Product went from sale back to normal
+  // 444 – HAS updates: combined Sale + LowStock
   "444": {
     wishlistId: "444",
-    lastSeenAt: "2025-12-06T15:20:00Z",
-    products: ["P40001"],
-    updates: [
+    lastSeenAt: "2025-12-07T10:00:00Z",
+    products: [
       {
-        productId: "P40001",
-        changeInStatus: ["NotOnSale"],
-        changedAtDate: "2025-12-09T16:45:00Z"
-      }
-    ]
-  },
-
-  // 5. Product went out of stock
-  "555": {
-    wishlistId: "555",
-    lastSeenAt: "2025-12-06T10:00:00Z",
-    products: ["P50001", "P50002"],
-    updates: [
-      {
-        productId: "P50002",
-        changeInStatus: ["NoStock"],
-        changedAtDate: "2025-12-09T13:10:00Z"
-      }
-    ]
-  },
-
-  // 6. Product came back in stock AND is on sale
-  "666": {
-    wishlistId: "666",
-    lastSeenAt: "2025-12-05T09:00:00Z",
-    products: ["P60001", "P60002", "P60003"],
-    updates: [
-      {
-        productId: "P60001",
-        changeInStatus: ["BackInStock", "Sale"],
-        changedAtDate: "2025-12-09T12:00:00Z"
-      }
-    ]
-  },
-
-  // 7. High stock (e.g. removed low-stock warning)
-  "777": {
-    wishlistId: "777",
-    lastSeenAt: "2025-12-04T18:30:00Z",
-    products: ["P70001", "P70002", "P70003"],
-    updates: [
-      {
-        productId: "P70003",
-        changeInStatus: ["HighStock"],
-        changedAtDate: "2025-12-09T14:25:00Z"
-      }
-    ]
-  },
-
-  // 8. Multiple products, some with multiple flags
-  "888": {
-    wishlistId: "888",
-    lastSeenAt: "2025-12-03T11:45:00Z",
-    products: ["P80001", "P80002", "P80003", "P80004"],
-    updates: [
-      {
-        productId: "P80001",
-        changeInStatus: ["Sale", "HighStock"],
-        changedAtDate: "2025-12-09T09:10:00Z"
+        productId: "P44401",
+        changeInStatus: ["Sale", "LowStock"],
+        changedAtDate: "2025-12-09T08:45:00Z"
       },
       {
-        productId: "P80004",
-        changeInStatus: ["LowStock"],
-        changedAtDate: "2025-12-09T09:50:00Z"
+        productId: "P44402",
+        changeInStatus: [],
+        changedAtDate: "2025-09-20T11:00:00Z"
       }
     ]
   },
 
-  // 9. No updates again (another hasUpdates = false example)
-  "999": {
-    wishlistId: "999",
-    lastSeenAt: "2025-12-02T08:00:00Z",
-    products: ["P90001"],
-    updates: []
+  // 555 – HAS updates: one NoStock, others unchanged (old)
+  "555": {
+    wishlistId: "555",
+    lastSeenAt: "2025-12-05T14:00:00Z",
+    products: [
+      {
+        productId: "P55501",
+        changeInStatus: ["NoStock"],
+        changedAtDate: "2025-12-09T16:00:00Z"
+      },
+      {
+        productId: "P55502",
+        changeInStatus: [],
+        changedAtDate: "2025-10-01T10:00:00Z"
+      },
+      {
+        productId: "P55503",
+        changeInStatus: [],
+        changedAtDate: "2025-09-10T10:00:00Z"
+      }
+    ]
   },
 
-  // 10. Everything happened: low stock, then sale, then back in stock (combined)
-  "1010": {
-    wishlistId: "1010",
-    lastSeenAt: "2025-12-01T07:30:00Z",
-    products: ["P100001", "P100002"],
-    updates: [
+  // 666 – NO updates: has statuses, but all before lastSeenAt
+  "666": {
+    wishlistId: "666",
+    lastSeenAt: "2025-12-10T09:00:00Z",
+    products: [
+      {
+        productId: "P66601",
+        changeInStatus: ["Sale"], // used to be on sale
+        changedAtDate: "2025-12-05T12:00:00Z" // BEFORE lastSeenAt
+      },
+      {
+        productId: "P66602",
+        changeInStatus: ["LowStock"],
+        changedAtDate: "2025-12-01T09:30:00Z"
+      }
+    ]
+  },
+
+  // 777 – HAS updates: BackInStock
+  "777": {
+    wishlistId: "777",
+    lastSeenAt: "2025-12-01T08:00:00Z",
+    products: [
+      {
+        productId: "P77701",
+        changeInStatus: ["BackInStock"],
+        changedAtDate: "2025-12-08T10:30:00Z"
+      },
+      {
+        productId: "P77702",
+        changeInStatus: [], // unchanged, old
+        changedAtDate: "2025-09-25T07:45:00Z"
+      }
+    ]
+  },
+
+  // 888 – HAS updates: multiple combined statuses
+  "888": {
+    wishlistId: "888",
+    lastSeenAt: "2025-12-09T06:00:00Z",
+    products: [
+      {
+        productId: "P88801",
+        changeInStatus: ["Sale", "BackInStock"],
+        changedAtDate: "2025-12-10T07:00:00Z"
+      },
+      {
+        productId: "P88802",
+        changeInStatus: ["HighStock"],
+        changedAtDate: "2025-12-09T20:15:00Z"
+      },
+      {
+        productId: "P88803",
+        changeInStatus: [],
+        changedAtDate: "2025-10-10T09:00:00Z"
+      }
+    ]
+  },
+
+  // 999 – NO updates, empty wishlist
+  "999": {
+    wishlistId: "999",
+    lastSeenAt: "2025-12-09T12:00:00Z",
+    products: [] // nothing in wishlist
+  },
+
+  // 1000 – MIXED: one updated, one old, one nil
+  "1000": {
+    wishlistId: "1000",
+    lastSeenAt: "2025-12-08T12:00:00Z",
+    products: [
       {
         productId: "P100001",
-        changeInStatus: ["LowStock", "Sale", "BackInStock"],
-        changedAtDate: "2025-12-09T17:05:00Z"
+        changeInStatus: ["Sale"],
+        changedAtDate: "2025-12-09T13:00:00Z" // NEW
       },
       {
         productId: "P100002",
-        changeInStatus: ["Sale"],
-        changedAtDate: "2025-12-09T17:10:00Z"
+        changeInStatus: ["LowStock"],
+        changedAtDate: "2025-11-01T09:00:00Z" // old
+      },
+      {
+        productId: "P100003",
+        changeInStatus: [], // nil
+        changedAtDate: "2025-10-05T09:00:00Z"
       }
     ]
   }
@@ -162,8 +211,10 @@ const WISHLISTS = {
 /**
  * GET /wishlist/:wishlistId/updates
  *
- * Returns whether the wishlist has updates and, if so,
- * the per-product change attributes.
+ * - hasUpdates = true if ANY product has:
+ *      changeInStatus.length > 0
+ *      AND changedAtDate > lastSeenAt
+ * - updatedProducts = just those products.
  */
 app.get("/wishlist/:wishlistId/updates", (req, res) => {
   const { wishlistId } = req.params;
@@ -176,20 +227,33 @@ app.get("/wishlist/:wishlistId/updates", (req, res) => {
     });
   }
 
-  const hasUpdates = wishlist.updates && wishlist.updates.length > 0;
+  const lastSeen = new Date(wishlist.lastSeenAt || 0);
+
+  const updatedProducts = (wishlist.products || []).filter((p) => {
+    if (!Array.isArray(p.changeInStatus) || p.changeInStatus.length === 0) {
+      // "nil" changes
+      return false;
+    }
+    if (!p.changedAtDate) return false;
+
+    const changedAt = new Date(p.changedAtDate);
+    return changedAt > lastSeen;
+  });
+
+  const hasUpdates = updatedProducts.length > 0;
 
   res.json({
     wishlistId: wishlist.wishlistId,
     lastSeenAt: wishlist.lastSeenAt,
+    products: wishlist.products,
     hasUpdates,
-    updatedProducts: wishlist.updates
+    updatedProducts
   });
 });
 
 /**
  * POST /wishlist/:wishlistId/view
- *
- * Simulates "view wishlist" and updates lastSeenAt in our mock db.
+ * - simulate "customer views wishlist", updating lastSeenAt to now.
  */
 app.post("/wishlist/:wishlistId/view", (req, res) => {
   const { wishlistId } = req.params;
@@ -213,5 +277,5 @@ app.post("/wishlist/:wishlistId/view", (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Mock WishlistService running on http://localhost:${PORT}`);
+  console.log(`Mock WishlistService running on port ${PORT}`);
 });
