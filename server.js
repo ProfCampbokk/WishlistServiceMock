@@ -1,4 +1,6 @@
 const express = require("express");
+const cors = require("cors");
+
 const app = express();
 
 // IMPORTANT: use env PORT if deployed, fallback for local
