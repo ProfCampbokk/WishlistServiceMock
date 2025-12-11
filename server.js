@@ -213,6 +213,40 @@ function getChangedProducts(updates) {
   );
 }
 
+async function fetchProductStatus(productId) {
+  try {
+    const response = await fetch(`https://product-status-htazdhbrhscqcyg7.uksouth-01.azurewebsites.net/product/${productId}`);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const productData = await response.json();
+    return productData.data || [];
+  } catch (error) {
+    console.error('Error fetching product status:', error);
+    throw error;
+  }
+}
+
+// Filter events by comparing startDate with lastSeenAt
+function filterNewEvents(events, lastSeenAt) {
+  return events.filter(event => {
+    const eventStartDate = new Date(event.startDate);
+    const lastSeen = new Date(lastSeenAt);
+    return eventStartDate < lastSeen;
+  });
+}
+
+// Format events into updatedProducts structure
+function formatUpdatedProducts(events) {
+  return events.map(event => ({
+    productId: event.productId,
+    changeInStatus: [event.eventType],
+    changedAtDate: event.startDate
+  }));
+}
+
 /**
  * GET /wishlist/:wishlistId/updates
  *
@@ -234,7 +268,7 @@ function getChangedProducts(updates) {
  *   "allProducts": ["P10201", "P10202"]
  * }
  */
-app.get("/wishlist/:wishlistId/updates", (req, res) => {
+app.get("/wishlist/:wishlistId/updates", async (req, res) => {
   const { wishlistId } = req.params;
   const wishlist = WISHLISTS[wishlistId];
 
@@ -245,14 +279,27 @@ app.get("/wishlist/:wishlistId/updates", (req, res) => {
     });
   }
 
-  const changedProducts = getChangedProducts(wishlist.updates);
-  const hasUpdates = changedProducts.length > 0;
+  let allEvents = [];
+    
+  // Loop through all products in the wishlist
+  for (const productId of wishlist.products) {
+    const events = await fetchProductStatus(productId);
+    allEvents.push(...events);
+  }
+
+  console.log('allEvents length: ' + allEvents.length);
+
+  // Filter events where startDate > lastSeenAt
+  const filteredEvents = filterNewEvents(allEvents, wishlist.lastSeenAt);
+
+  //const changedProducts = getChangedProducts(wishlist.updates);
+  const hasUpdates = filteredEvents.length > 0;
 
   res.json({
     wishlistId: wishlist.wishlistId,
     lastSeenAt: wishlist.lastSeenAt,
     hasUpdates,
-    updatedProducts: changedProducts,
+    updatedProducts: formatUpdatedProducts(filteredEvents),
     allProducts: wishlist.products
   });
 });
