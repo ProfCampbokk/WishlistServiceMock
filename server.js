@@ -234,7 +234,7 @@ function filterNewEvents(events, lastSeenAt) {
   return events.filter(event => {
     const eventStartDate = new Date(event.startDate);
     const lastSeen = new Date(lastSeenAt);
-    return eventStartDate < lastSeen;
+    return eventStartDate > lastSeen;
   });
 }
 
