@@ -204,7 +204,7 @@ const WISHLISTS = {
   "800": {
     wishlistId: "800",
     lastSeenAt: "2025-12-10T08:00:00Z",
-    products: ["P80001", "P80002", "P80003", "P80004", "P80005"],
+    products: ["P10101", "P10101", "P10103", "P10201", "P10202"],
     updates: []
   }
 };
@@ -296,17 +296,21 @@ app.get("/wishlist/:wishlistId/updates", async (req, res) => {
 
   if (wishlistId === "800") {
     const now = new Date().toISOString();
-    const updatedProducts = wishlist.products.map((productId) => {
-      const changeInStatus =
-        RANDOM_STATUS_OPTIONS[
-          Math.floor(Math.random() * RANDOM_STATUS_OPTIONS.length)
-        ];
-      return {
-        productId,
-        changeInStatus,
-        changedAtDate: now
-      };
-    });
+    const updatedProducts = wishlist.products
+      .map((productId) => {
+        const changeInStatus =
+          RANDOM_STATUS_OPTIONS[
+            Math.floor(Math.random() * RANDOM_STATUS_OPTIONS.length)
+          ];
+        if (changeInStatus.length === 0) return null;
+
+        return {
+          productId,
+          changeInStatus,
+          changedAtDate: now
+        };
+      })
+      .filter(Boolean);
 
     const hasUpdates = updatedProducts.some(
       (product) => product.changeInStatus.length > 0
