@@ -198,8 +198,23 @@ const WISHLISTS = {
         changedAtDate: "2025-10-01T11:11:00Z"
       }
     ]
+  },
+
+  // 800: Randomized 5-item wishlist; mixes changes and non-changes
+  "800": {
+    wishlistId: "800",
+    lastSeenAt: "2025-12-10T08:00:00Z",
+    products: ["P80001", "P80002", "P80003", "P80004", "P80005"],
+    updates: []
   }
 };
+
+const RANDOM_STATUS_OPTIONS = [
+  [],
+  ["BackInStock"],
+  ["LowStock"],
+  ["Sale"]
+];
 
 /**
  * Helper: get only the products that actually have real changes
@@ -276,6 +291,33 @@ app.get("/wishlist/:wishlistId/updates", async (req, res) => {
     return res.status(404).json({
       error: "Wishlist not found",
       wishlistId
+    });
+  }
+
+  if (wishlistId === "800") {
+    const now = new Date().toISOString();
+    const updatedProducts = wishlist.products.map((productId) => {
+      const changeInStatus =
+        RANDOM_STATUS_OPTIONS[
+          Math.floor(Math.random() * RANDOM_STATUS_OPTIONS.length)
+        ];
+      return {
+        productId,
+        changeInStatus,
+        changedAtDate: now
+      };
+    });
+
+    const hasUpdates = updatedProducts.some(
+      (product) => product.changeInStatus.length > 0
+    );
+
+    return res.json({
+      wishlistId: wishlist.wishlistId,
+      lastSeenAt: wishlist.lastSeenAt,
+      hasUpdates,
+      updatedProducts,
+      allProducts: wishlist.products
     });
   }
 
